@@ -228,75 +228,159 @@ interface NoteCardProps {
   onToggle: (id: string) => void;
   onDelete: (id: string) => void;
   onPin: (id: string) => void;
+  isNew?: boolean;
 }
 
-function NoteCard({ note, onToggle, onDelete, onPin }: NoteCardProps) {
-  const [expanded, setExpanded] = useState(false);
+function NoteCard({ note, onToggle, onDelete, onPin, isNew }: NoteCardProps) {
+  const [expanded, setExpanded]   = useState(false);
+  const [deleting, setDeleting]   = useState(false);
+  const [popping, setPopping]     = useState(false);
+  const [swipeX, setSwipeX]       = useState(0);
+  const touchStartX               = useRef(0);
+  const touchStartY               = useRef(0);
+  const isDragging                = useRef(false);
+
+  // ── Swipe handlers ──────────────────────────────────────────────────────
+  function handleTouchStart(e: React.TouchEvent) {
+    touchStartX.current  = e.touches[0].clientX;
+    touchStartY.current  = e.touches[0].clientY;
+    isDragging.current   = false;
+  }
+
+  function handleTouchMove(e: React.TouchEvent) {
+    const dx = e.touches[0].clientX - touchStartX.current;
+    const dy = Math.abs(e.touches[0].clientY - touchStartY.current);
+    // Ignore if mostly vertical scroll
+    if (dy > Math.abs(dx) || dy > 12) return;
+    if (dx < -8) {
+      isDragging.current = true;
+      setSwipeX(Math.max(dx, -220));
+    }
+  }
+
+  function handleTouchEnd() {
+    if (swipeX < -80) {
+      // Fly off screen then remove
+      setDeleting(true);
+      setSwipeX(-420);
+      setTimeout(() => onDelete(note.id), 300);
+    } else {
+      setSwipeX(0); // snap back
+    }
+    isDragging.current = false;
+  }
+
+  // ── Toggle with pop animation ────────────────────────────────────────────
+  function handleToggle(e: React.MouseEvent) {
+    e.stopPropagation();
+    setPopping(true);
+    setTimeout(() => setPopping(false), 350);
+    onToggle(note.id);
+  }
+
+  function handleCardClick() {
+    if (!isDragging.current) setExpanded((v) => !v);
+  }
+
+  const isMoving      = swipeX !== 0 && !deleting;
+  const deleteReveal  = Math.min(Math.abs(swipeX) / 80, 1);
 
   return (
     <div
-      role="button"
-      tabIndex={0}
-      onClick={() => setExpanded((v) => !v)}
-      onKeyDown={(e) => e.key === "Enter" && setExpanded((v) => !v)}
-      className={`note-card cursor-pointer select-none ${COLOR_CARD_BG[note.color]}`}
+      className="relative"
+      style={{
+        animation: isNew ? "noteEnter 0.38s cubic-bezier(0.34,1.56,0.64,1) both" : undefined,
+      }}
     >
-      <div className="flex items-start gap-3">
-        {/* Checkbox */}
-        <button
-          aria-label={note.done ? "Mark undone" : "Mark done"}
-          onClick={(e) => { e.stopPropagation(); onToggle(note.id); }}
-          className={`custom-checkbox mt-0.5 flex-shrink-0 ${note.done ? "checked" : ""}`}
-        >
-          {note.done && <CheckIcon />}
-        </button>
-
-        {/* Content */}
-        <div className="flex-1 min-w-0">
-          <p
-            className={`text-sm leading-relaxed break-words ${
-              note.done ? "line-through text-slate-400 dark:text-slate-500" : "text-slate-800 dark:text-slate-100"
-            }`}
-          >
-            {note.text}
-          </p>
-          <div className="flex items-center gap-2 mt-1.5">
-            <span className={`w-1.5 h-1.5 rounded-full ${COLOR_DOT[note.color]}`} />
-            <span className="text-xs text-slate-400 dark:text-slate-500">{fmtDate(note.createdAt)}</span>
-            {note.pinned && (
-              <span className="text-xs text-indigo-500 dark:text-indigo-400 font-medium">pinned</span>
-            )}
-          </div>
-        </div>
+      {/* Red delete background — revealed as card slides left */}
+      <div
+        aria-hidden="true"
+        className="absolute inset-0 rounded-2xl bg-rose-500 flex items-center justify-end pr-5"
+        style={{ opacity: deleteReveal }}
+      >
+        <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+          <polyline points="3 6 5 6 21 6" strokeLinecap="round" />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 6l-1 14H6L5 6M10 11v6M14 11v6M9 6V4h6v2" />
+        </svg>
       </div>
 
-      {/* Action row — shown on tap */}
-      {expanded && (
-        <div
-          className="flex items-center justify-end gap-1 mt-3 pt-3 border-t border-slate-100 dark:border-slate-700"
-          onClick={(e) => e.stopPropagation()}
-        >
+      {/* Card */}
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={handleCardClick}
+        onKeyDown={(e) => e.key === "Enter" && handleCardClick()}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        className={`note-card cursor-pointer select-none relative z-10 ${COLOR_CARD_BG[note.color]}`}
+        style={{
+          transform:  `translateX(${swipeX}px)`,
+          opacity:    deleting ? 0 : 1,
+          transition: isMoving
+            ? "none"
+            : "transform 0.32s cubic-bezier(0.34,1.56,0.64,1), opacity 0.28s ease",
+          touchAction: "pan-y",
+        }}
+      >
+        <div className="flex items-start gap-3">
+          {/* Checkbox */}
           <button
-            aria-label={note.pinned ? "Unpin" : "Pin"}
-            onClick={() => onPin(note.id)}
-            className={`btn-icon w-auto rounded-lg px-2 gap-1 text-xs ${
-              note.pinned ? "text-indigo-500 dark:text-indigo-400" : ""
-            }`}
+            aria-label={note.done ? "Mark undone" : "Mark done"}
+            onClick={handleToggle}
+            className={`custom-checkbox mt-0.5 flex-shrink-0 ${note.done ? "checked" : ""}`}
+            style={{ animation: popping ? "checkPop 0.35s ease both" : undefined }}
           >
-            <PinIcon filled={note.pinned} />
-            {note.pinned ? "Unpin" : "Pin"}
+            {note.done && <CheckIcon />}
           </button>
 
-          <button
-            aria-label="Delete note"
-            onClick={() => onDelete(note.id)}
-            className="btn-icon w-auto rounded-lg px-2 gap-1 text-xs text-rose-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/30"
-          >
-            <TrashIcon />
-            Delete
-          </button>
+          {/* Content */}
+          <div className="flex-1 min-w-0">
+            <p
+              className={`text-sm leading-relaxed break-words transition-all duration-300 ${
+                note.done ? "line-through text-slate-400 dark:text-slate-500" : "text-slate-800 dark:text-slate-100"
+              }`}
+            >
+              {note.text}
+            </p>
+            <div className="flex items-center gap-2 mt-1.5">
+              <span className={`w-1.5 h-1.5 rounded-full ${COLOR_DOT[note.color]}`} />
+              <span className="text-xs text-slate-400 dark:text-slate-500">{fmtDate(note.createdAt)}</span>
+              {note.pinned && (
+                <span className="text-xs text-indigo-500 dark:text-indigo-400 font-medium">pinned</span>
+              )}
+            </div>
+          </div>
         </div>
-      )}
+
+        {/* Action row — shown on tap */}
+        {expanded && (
+          <div
+            className="flex items-center justify-end gap-1 mt-3 pt-3 border-t border-slate-100 dark:border-slate-700 animate-fade-in"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              aria-label={note.pinned ? "Unpin" : "Pin"}
+              onClick={() => onPin(note.id)}
+              className={`btn-icon w-auto rounded-lg px-2 gap-1 text-xs ${
+                note.pinned ? "text-indigo-500 dark:text-indigo-400" : ""
+              }`}
+            >
+              <PinIcon filled={note.pinned} />
+              {note.pinned ? "Unpin" : "Pin"}
+            </button>
+
+            <button
+              aria-label="Delete note"
+              onClick={() => onDelete(note.id)}
+              className="btn-icon w-auto rounded-lg px-2 gap-1 text-xs text-rose-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/30"
+            >
+              <TrashIcon />
+              Delete
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -433,6 +517,7 @@ export default function Home() {
   const [search, setSearch]       = useState("");
   const [sheetOpen, setSheetOpen] = useState(false);
   const [dark, setDark]           = useState(false);
+  const [newNoteId, setNewNoteId] = useState<string | null>(null);
 
   // Read dark-mode state already applied by the inline script in layout.tsx
   useEffect(() => {
@@ -463,6 +548,8 @@ export default function Home() {
       pinned: false,
     };
     setNotes((prev) => [note, ...prev]);
+    setNewNoteId(note.id);
+    setTimeout(() => setNewNoteId(null), 450);
   }
 
   function toggleNote(id: string) {
@@ -598,6 +685,7 @@ export default function Home() {
                 onToggle={toggleNote}
                 onDelete={deleteNote}
                 onPin={pinNote}
+                isNew={note.id === newNoteId}
               />
             ))}
           </div>
