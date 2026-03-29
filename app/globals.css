@@ -1,0 +1,116 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Google Font: Inter ── */
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap");
+
+@layer base {
+  :root {
+    --gradient-start: #6366f1;
+    --gradient-end:   #8b5cf6;
+  }
+
+  html {
+    font-family: "Inter", system-ui, sans-serif;
+    -webkit-tap-highlight-color: transparent;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 transition-colors duration-300;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+}
+
+@layer components {
+  /* Gradient header */
+  .header-gradient {
+    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a78bfa 100%);
+  }
+
+  /* Floating card */
+  .note-card {
+    @apply relative bg-white dark:bg-slate-800 rounded-2xl p-4 shadow-card dark:shadow-card-dark
+           border border-slate-100 dark:border-slate-700 transition-all duration-200
+           hover:shadow-lg hover:-translate-y-0.5 active:scale-[0.98];
+  }
+
+  /* Input field */
+  .input-base {
+    @apply w-full rounded-xl border border-slate-200 dark:border-slate-700
+           bg-white dark:bg-slate-800 px-4 py-3 text-sm
+           placeholder:text-slate-400 dark:placeholder:text-slate-500
+           focus:outline-none focus:ring-2 focus:ring-brand-400 dark:focus:ring-brand-500
+           transition duration-150;
+  }
+
+  /* Primary button */
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl
+           bg-gradient-to-r from-brand-500 to-violet-500
+           px-5 py-2.5 text-sm font-semibold text-white shadow
+           hover:opacity-90 active:scale-95 transition duration-150
+           disabled:opacity-40 disabled:pointer-events-none;
+  }
+
+  /* Icon button */
+  .btn-icon {
+    @apply inline-flex items-center justify-center w-8 h-8 rounded-full
+           text-slate-400 hover:text-slate-700 dark:hover:text-slate-200
+           hover:bg-slate-100 dark:hover:bg-slate-700
+           active:scale-90 transition duration-150;
+  }
+
+  /* Pill badge */
+  .badge {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5
+           text-xs font-medium bg-brand-50 dark:bg-brand-900/30
+           text-brand-600 dark:text-brand-300;
+  }
+
+  /* Checkbox custom */
+  .custom-checkbox {
+    @apply w-5 h-5 rounded-full border-2 border-slate-300 dark:border-slate-600 flex-shrink-0
+           flex items-center justify-center cursor-pointer transition duration-150
+           hover:border-brand-400;
+  }
+  .custom-checkbox.checked {
+    @apply bg-gradient-to-br from-brand-500 to-violet-500 border-transparent;
+  }
+}
+
+@layer utilities {
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
+  .text-gradient {
+    @apply bg-gradient-to-r from-brand-500 to-violet-500 bg-clip-text text-transparent;
+  }
+
+  .animate-fade-in {
+    animation: fadeIn 0.25s ease both;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0);   }
+  }
+
+  .animate-slide-up {
+    animation: slideUp 0.3s cubic-bezier(0.34,1.56,0.64,1) both;
+  }
+
+  @keyframes slideUp {
+    from { opacity: 0; transform: translateY(20px) scale(0.97); }
+    to   { opacity: 1; transform: translateY(0)    scale(1);    }
+  }
+}
