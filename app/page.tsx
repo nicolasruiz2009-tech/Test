@@ -409,7 +409,10 @@ function AddSheet({ open, onClose, onAdd }: AddSheetProps) {
   const [voiceOk, setVoiceOk]     = useState(false);
   const textareaRef               = useRef<HTMLTextAreaElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const recognitionRef            = useRef<any>(null);
+  const recognitionRef  = useRef<any>(null);
+  const committedRef    = useRef("");      // text confirmed across sessions
+  const lastChunkRef    = useRef("");      // latest transcript in current session
+  const manualStopRef   = useRef(false);  // true = user tapped Stop
 
   // Detect Web Speech API support once on mount
   useEffect(() => {
@@ -427,6 +430,9 @@ function AddSheet({ open, onClose, onAdd }: AddSheetProps) {
       setText("");
       setColor("default");
       stopListening();
+      committedRef.current  = "";
+      lastChunkRef.current  = "";
+      manualStopRef.current = false;
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -438,22 +444,51 @@ function AddSheet({ open, onClose, onAdd }: AddSheetProps) {
 
     const r = new SR();
     r.lang            = navigator.language || "fr-FR";
-    r.continuous      = false;
+    r.continuous      = false;   // iOS ignores true — we handle restart ourselves
     r.interimResults  = true;
     r.maxAlternatives = 1;
 
     r.onstart = () => setListening(true);
-    r.onend   = () => setListening(false);
-    r.onerror = () => setListening(false);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     r.onresult = (e: any) => {
-      let transcript = "";
+      let chunk = "";
       for (let i = 0; i < e.results.length; i++) {
-        transcript += e.results[i][0].transcript;
+        chunk += e.results[i][0].transcript;
       }
-      // Capitalise first letter
-      setText(transcript.charAt(0).toUpperCase() + transcript.slice(1));
+      lastChunkRef.current = chunk;
+
+      // Show committed text + live chunk
+      const full = [committedRef.current, chunk].filter(Boolean).join(" ");
+      setText(full.charAt(0).toUpperCase() + full.slice(1));
+    };
+
+    r.onend = () => {
+      // Commit whatever was captured this session
+      if (lastChunkRef.current) {
+        committedRef.current = [committedRef.current, lastChunkRef.current]
+          .filter(Boolean).join(" ");
+        lastChunkRef.current = "";
+      }
+
+      if (!manualStopRef.current) {
+        // Auto-restart after tiny gap so iOS doesn't complain
+        setTimeout(() => {
+          if (!manualStopRef.current) startListening();
+          else setListening(false);
+        }, 180);
+      } else {
+        setListening(false);
+      }
+    };
+
+    r.onerror = (e: any) => {
+      // "no-speech" is normal on iOS after silence — just restart
+      if (e.error === "no-speech" && !manualStopRef.current) {
+        setTimeout(() => { if (!manualStopRef.current) startListening(); }, 180);
+      } else {
+        setListening(false);
+      }
     };
 
     recognitionRef.current = r;
@@ -461,13 +496,22 @@ function AddSheet({ open, onClose, onAdd }: AddSheetProps) {
   }
 
   function stopListening() {
+    manualStopRef.current = true;
     recognitionRef.current?.stop();
     recognitionRef.current = null;
     setListening(false);
   }
 
   function toggleListening() {
-    listening ? stopListening() : startListening();
+    if (listening) {
+      stopListening();
+    } else {
+      // Seed committed text with whatever is already typed
+      committedRef.current  = text.trim();
+      lastChunkRef.current  = "";
+      manualStopRef.current = false;
+      startListening();
+    }
   }
 
   function handleAdd() {
