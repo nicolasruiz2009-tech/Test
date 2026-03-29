@@ -153,6 +153,15 @@ function PinIcon({ filled }: { filled: boolean }) {
   );
 }
 
+function MicIcon({ active }: { active: boolean }) {
+  return (
+    <svg className="w-6 h-6" viewBox="0 0 24 24" fill={active ? "currentColor" : "none"} stroke="currentColor" strokeWidth={2}>
+      <rect x="9" y="2" width="6" height="12" rx="3" strokeLinejoin="round" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M5 10a7 7 0 0014 0M12 19v3M8 22h8" />
+    </svg>
+  );
+}
+
 function NotePageIcon() {
   return (
     <svg className="w-10 h-10 text-indigo-300 dark:text-indigo-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
@@ -394,9 +403,21 @@ interface AddSheetProps {
 }
 
 function AddSheet({ open, onClose, onAdd }: AddSheetProps) {
-  const [text, setText] = useState("");
-  const [color, setColor] = useState<NoteColor>("default");
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [text, setText]           = useState("");
+  const [color, setColor]         = useState<NoteColor>("default");
+  const [listening, setListening] = useState(false);
+  const [voiceOk, setVoiceOk]     = useState(false);
+  const textareaRef               = useRef<HTMLTextAreaElement>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const recognitionRef            = useRef<any>(null);
+
+  // Detect Web Speech API support once on mount
+  useEffect(() => {
+    setVoiceOk(
+      typeof window !== "undefined" &&
+      !!((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition)
+    );
+  }, []);
 
   useEffect(() => {
     if (open) {
@@ -405,8 +426,49 @@ function AddSheet({ open, onClose, onAdd }: AddSheetProps) {
     } else {
       setText("");
       setColor("default");
+      stopListening();
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  function startListening() {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const SR = (window as any).SpeechRecognition ?? (window as any).webkitSpeechRecognition;
+    if (!SR) return;
+
+    const r = new SR();
+    r.lang            = navigator.language || "fr-FR";
+    r.continuous      = false;
+    r.interimResults  = true;
+    r.maxAlternatives = 1;
+
+    r.onstart = () => setListening(true);
+    r.onend   = () => setListening(false);
+    r.onerror = () => setListening(false);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    r.onresult = (e: any) => {
+      let transcript = "";
+      for (let i = 0; i < e.results.length; i++) {
+        transcript += e.results[i][0].transcript;
+      }
+      // Capitalise first letter
+      setText(transcript.charAt(0).toUpperCase() + transcript.slice(1));
+    };
+
+    recognitionRef.current = r;
+    r.start();
+  }
+
+  function stopListening() {
+    recognitionRef.current?.stop();
+    recognitionRef.current = null;
+    setListening(false);
+  }
+
+  function toggleListening() {
+    listening ? stopListening() : startListening();
+  }
 
   function handleAdd() {
     const trimmed = text.trim();
@@ -442,15 +504,38 @@ function AddSheet({ open, onClose, onAdd }: AddSheetProps) {
         </div>
 
         <div className="px-5 pb-8 pt-3">
-          <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100 mb-4">New Note</h2>
+          {/* Title + mic button */}
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">New Note</h2>
+
+            {voiceOk && (
+              <button
+                onClick={toggleListening}
+                aria-label={listening ? "Stop dictation" : "Dictate note"}
+                className={`relative flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium transition-all duration-200
+                  ${listening
+                    ? "bg-rose-500 text-white shadow-lg shadow-rose-500/40"
+                    : "bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700"
+                  }`}
+              >
+                {/* Pulse ring when active */}
+                {listening && (
+                  <span className="absolute inset-0 rounded-xl bg-rose-500 animate-ping opacity-25" />
+                )}
+                <MicIcon active={listening} />
+                <span className="relative">{listening ? "Écoute…" : "Dicter"}</span>
+              </button>
+            )}
+          </div>
 
           <textarea
             ref={textareaRef}
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder="Write something…"
+            placeholder={listening ? "Parle, j'écoute…" : "Écris quelque chose…"}
             rows={4}
-            className="input-base resize-none mb-4 text-base leading-relaxed"
+            className={`input-base resize-none mb-4 text-base leading-relaxed transition-all duration-300
+              ${listening ? "border-rose-300 dark:border-rose-700 ring-2 ring-rose-200 dark:ring-rose-900/50" : ""}`}
             onKeyDown={(e) => {
               if ((e.metaKey || e.ctrlKey) && e.key === "Enter") handleAdd();
               if (e.key === "Escape") onClose();
