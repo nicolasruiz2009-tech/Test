@@ -269,6 +269,7 @@ function NoteCard({ note, onToggle, onDelete, onPin, isNew }: NoteCardProps) {
   const [expanded, setExpanded]   = useState(false);
   const [deleting, setDeleting]   = useState(false);
   const [popping, setPopping]     = useState(false);
+  const [lightbox, setLightbox]   = useState(false);
   const [swipeX, setSwipeX]       = useState(0);
   const touchStartX               = useRef(0);
   const touchStartY               = useRef(0);
@@ -387,9 +388,12 @@ function NoteCard({ note, onToggle, onDelete, onPin, isNew }: NoteCardProps) {
           </div>
         </div>
 
-        {/* Photo */}
+        {/* Photo — tap to open lightbox */}
         {note.image && (
-          <div className="mt-3 rounded-xl overflow-hidden">
+          <div
+            className="mt-3 rounded-xl overflow-hidden cursor-zoom-in active:opacity-80 transition-opacity"
+            onClick={(e) => { e.stopPropagation(); setLightbox(true); }}
+          >
             <img
               src={note.image}
               alt="note photo"
@@ -397,6 +401,15 @@ function NoteCard({ note, onToggle, onDelete, onPin, isNew }: NoteCardProps) {
               style={{ filter: note.imageFilter }}
             />
           </div>
+        )}
+
+        {/* Lightbox */}
+        {lightbox && note.image && (
+          <PhotoLightbox
+            src={note.image}
+            filter={note.imageFilter}
+            onClose={() => setLightbox(false)}
+          />
         )}
 
         {/* Action row — shown on tap */}
@@ -427,6 +440,35 @@ function NoteCard({ note, onToggle, onDelete, onPin, isNew }: NoteCardProps) {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// ── Photo Lightbox ────────────────────────────────────────────────────────────
+
+function PhotoLightbox({ src, filter, onClose }: { src: string; filter?: string; onClose: () => void }) {
+  // Close on Escape key (desktop)
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/95 flex items-center justify-center"
+      onClick={onClose}
+      style={{ animation: "fadeIn 0.2s ease both" }}
+    >
+      <img
+        src={src}
+        alt="full photo"
+        className="max-w-full max-h-full object-contain"
+        style={{ filter, animation: "slideUp 0.25s cubic-bezier(0.34,1.56,0.64,1) both" }}
+        onClick={(e) => e.stopPropagation()}
+      />
+      {/* Close hint */}
+      <span className="absolute top-5 right-5 text-white/50 text-sm">Tap pour fermer</span>
     </div>
   );
 }
