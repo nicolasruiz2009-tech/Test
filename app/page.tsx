@@ -13,7 +13,22 @@ interface Note {
   color: NoteColor;
   createdAt: number;
   pinned: boolean;
+  image?: string; // base64 JPEG data URL
 }
+
+// ── Photo filters ────────────────────────────────────────────────────────────
+
+const PHOTO_FILTERS = [
+  { id: "none",    label: "Original", css: "none" },
+  { id: "bw",      label: "N&B",      css: "grayscale(100%)" },
+  { id: "sepia",   label: "Sépia",    css: "sepia(100%)" },
+  { id: "matrix",  label: "Matrix",   css: "hue-rotate(90deg) saturate(3) brightness(0.75)" },
+  { id: "robot",   label: "Robot",    css: "hue-rotate(195deg) saturate(4) contrast(1.4) brightness(0.85)" },
+  { id: "neon",    label: "Néon",     css: "contrast(2) saturate(4) brightness(1.1)" },
+  { id: "vintage", label: "Vintage",  css: "sepia(40%) contrast(1.1) brightness(1.1) saturate(1.4)" },
+] as const;
+
+type FilterId = typeof PHOTO_FILTERS[number]["id"];
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -149,6 +164,15 @@ function PinIcon({ filled }: { filled: boolean }) {
   return (
     <svg className="w-4 h-4" viewBox="0 0 24 24" fill={filled ? "currentColor" : "none"} stroke="currentColor" strokeWidth={2}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M15 4.5l-8 8 2 2 8-8M9 15l-5 5M12 3l9 9-4 1-6-6 1-4z" />
+    </svg>
+  );
+}
+
+function CameraIcon() {
+  return (
+    <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z" />
+      <circle cx="12" cy="13" r="4" />
     </svg>
   );
 }
@@ -362,6 +386,13 @@ function NoteCard({ note, onToggle, onDelete, onPin, isNew }: NoteCardProps) {
           </div>
         </div>
 
+        {/* Photo */}
+        {note.image && (
+          <div className="mt-3 rounded-xl overflow-hidden">
+            <img src={note.image} alt="note photo" className="w-full max-h-52 object-cover" />
+          </div>
+        )}
+
         {/* Action row — shown on tap */}
         {expanded && (
           <div
@@ -394,25 +425,127 @@ function NoteCard({ note, onToggle, onDelete, onPin, isNew }: NoteCardProps) {
   );
 }
 
+// ── Photo Editor ─────────────────────────────────────────────────────────────
+
+interface PhotoEditorProps {
+  src: string;
+  onConfirm: (dataUrl: string) => void;
+  onCancel: () => void;
+}
+
+function PhotoEditor({ src, onConfirm, onCancel }: PhotoEditorProps) {
+  const [filterId, setFilterId] = useState<FilterId>("none");
+  const imgRef = useRef<HTMLImageElement>(null);
+
+  const filterCss = PHOTO_FILTERS.find((f) => f.id === filterId)?.css ?? "none";
+
+  function applyAndConfirm() {
+    const img = imgRef.current;
+    if (!img) return;
+
+    // Resize to max 900px while keeping aspect ratio
+    const MAX = 900;
+    const scale = Math.min(MAX / img.naturalWidth, MAX / img.naturalHeight, 1);
+    const w = Math.round(img.naturalWidth  * scale);
+    const h = Math.round(img.naturalHeight * scale);
+
+    const canvas = document.createElement("canvas");
+    canvas.width  = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d")!;
+    if (filterCss !== "none") ctx.filter = filterCss;
+    ctx.drawImage(img, 0, 0, w, h);
+
+    onConfirm(canvas.toDataURL("image/jpeg", 0.75));
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black flex flex-col">
+      {/* Header */}
+      <div className="flex items-center justify-between px-5 py-4 bg-black/70 backdrop-blur-sm">
+        <button
+          onClick={onCancel}
+          className="text-white/70 text-sm font-medium active:opacity-50 transition"
+        >
+          Annuler
+        </button>
+        <h3 className="text-white text-sm font-semibold">Choisir un filtre</h3>
+        <button
+          onClick={applyAndConfirm}
+          className="text-indigo-400 text-sm font-bold active:opacity-50 transition"
+        >
+          Utiliser
+        </button>
+      </div>
+
+      {/* Image preview with selected filter */}
+      <div className="flex-1 flex items-center justify-center p-4 overflow-hidden">
+        <img
+          ref={imgRef}
+          src={src}
+          alt="preview"
+          className="max-w-full max-h-full rounded-2xl object-contain shadow-2xl"
+          style={{ filter: filterCss === "none" ? undefined : filterCss }}
+          crossOrigin="anonymous"
+        />
+      </div>
+
+      {/* Filter strip */}
+      <div className="bg-black/70 backdrop-blur-sm px-4 pt-4 pb-10">
+        <div className="flex gap-4 overflow-x-auto scrollbar-hide pb-1">
+          {PHOTO_FILTERS.map((f) => (
+            <button
+              key={f.id}
+              onClick={() => setFilterId(f.id)}
+              className={`flex-shrink-0 flex flex-col items-center gap-2 transition-all duration-150 ${
+                filterId === f.id ? "scale-105" : "opacity-55 hover:opacity-80"
+              }`}
+            >
+              <div
+                className={`w-16 h-16 rounded-xl overflow-hidden border-2 transition-all ${
+                  filterId === f.id ? "border-indigo-400 shadow-lg shadow-indigo-500/40" : "border-transparent"
+                }`}
+              >
+                <img
+                  src={src}
+                  alt={f.label}
+                  className="w-full h-full object-cover"
+                  style={{ filter: f.css === "none" ? undefined : f.css }}
+                />
+              </div>
+              <span className={`text-[11px] font-medium ${filterId === f.id ? "text-indigo-400" : "text-white/60"}`}>
+                {f.label}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Add Note Bottom Sheet ─────────────────────────────────────────────────────
 
 interface AddSheetProps {
   open: boolean;
   onClose: () => void;
-  onAdd: (text: string, color: NoteColor) => void;
+  onAdd: (text: string, color: NoteColor, image?: string) => void;
 }
 
 function AddSheet({ open, onClose, onAdd }: AddSheetProps) {
-  const [text, setText]           = useState("");
-  const [color, setColor]         = useState<NoteColor>("default");
-  const [listening, setListening] = useState(false);
-  const [voiceOk, setVoiceOk]     = useState(false);
-  const textareaRef               = useRef<HTMLTextAreaElement>(null);
+  const [text, setText]               = useState("");
+  const [color, setColor]             = useState<NoteColor>("default");
+  const [listening, setListening]     = useState(false);
+  const [voiceOk, setVoiceOk]         = useState(false);
+  const [rawPhoto, setRawPhoto]       = useState<string | null>(null);   // before filter
+  const [savedPhoto, setSavedPhoto]   = useState<string | null>(null);   // after filter
+  const textareaRef                   = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef                  = useRef<HTMLInputElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recognitionRef  = useRef<any>(null);
-  const committedRef    = useRef("");      // text confirmed across sessions
-  const lastChunkRef    = useRef("");      // latest transcript in current session
-  const manualStopRef   = useRef(false);  // true = user tapped Stop
+  const committedRef    = useRef("");
+  const lastChunkRef    = useRef("");
+  const manualStopRef   = useRef(false);
 
   // Detect Web Speech API support once on mount
   useEffect(() => {
@@ -429,6 +562,8 @@ function AddSheet({ open, onClose, onAdd }: AddSheetProps) {
     } else {
       setText("");
       setColor("default");
+      setRawPhoto(null);
+      setSavedPhoto(null);
       stopListening();
       committedRef.current  = "";
       lastChunkRef.current  = "";
@@ -514,15 +649,44 @@ function AddSheet({ open, onClose, onAdd }: AddSheetProps) {
     }
   }
 
+  function handlePhotoSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => setRawPhoto(ev.target?.result as string);
+    reader.readAsDataURL(file);
+    // Reset input so same file can be re-selected
+    e.target.value = "";
+  }
+
   function handleAdd() {
     const trimmed = text.trim();
-    if (!trimmed) return;
-    onAdd(trimmed, color);
+    if (!trimmed && !savedPhoto) return;
+    onAdd(trimmed, color, savedPhoto ?? undefined);
     onClose();
   }
 
   return (
     <>
+      {/* Hidden file input — opens camera on mobile */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        onChange={handlePhotoSelected}
+      />
+
+      {/* Photo editor overlay */}
+      {rawPhoto && (
+        <PhotoEditor
+          src={rawPhoto}
+          onConfirm={(dataUrl) => { setSavedPhoto(dataUrl); setRawPhoto(null); }}
+          onCancel={() => setRawPhoto(null)}
+        />
+      )}
+
       {/* Backdrop */}
       <div
         aria-hidden="true"
@@ -548,36 +712,73 @@ function AddSheet({ open, onClose, onAdd }: AddSheetProps) {
         </div>
 
         <div className="px-5 pb-8 pt-3">
-          {/* Title + mic button */}
+          {/* Title + mic + camera buttons */}
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">New Note</h2>
 
-            {voiceOk && (
+            <div className="flex items-center gap-2">
+              {/* Camera button */}
               <button
-                onClick={toggleListening}
-                aria-label={listening ? "Stop dictation" : "Dictate note"}
-                className={`relative flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium transition-all duration-200
-                  ${listening
-                    ? "bg-rose-500 text-white shadow-lg shadow-rose-500/40"
+                onClick={() => fileInputRef.current?.click()}
+                aria-label="Take photo"
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium transition-all duration-200
+                  ${savedPhoto
+                    ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/40"
                     : "bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700"
                   }`}
               >
-                {/* Pulse ring when active */}
-                {listening && (
-                  <span className="absolute inset-0 rounded-xl bg-rose-500 animate-ping opacity-25" />
-                )}
-                <MicIcon active={listening} />
-                <span className="relative">{listening ? "Écoute…" : "Dicter"}</span>
+                <CameraIcon />
+                <span>{savedPhoto ? "Photo ✓" : "Photo"}</span>
               </button>
-            )}
+
+              {/* Mic button */}
+              {voiceOk && (
+                <button
+                  onClick={toggleListening}
+                  aria-label={listening ? "Stop dictation" : "Dictate note"}
+                  className={`relative flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium transition-all duration-200
+                    ${listening
+                      ? "bg-rose-500 text-white shadow-lg shadow-rose-500/40"
+                      : "bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700"
+                    }`}
+                >
+                  {listening && (
+                    <span className="absolute inset-0 rounded-xl bg-rose-500 animate-ping opacity-25" />
+                  )}
+                  <MicIcon active={listening} />
+                  <span className="relative">{listening ? "Écoute…" : "Dicter"}</span>
+                </button>
+              )}
+            </div>
           </div>
+
+          {/* Photo preview (thumbnail) */}
+          {savedPhoto && (
+            <div className="relative mb-4 rounded-2xl overflow-hidden animate-fade-in">
+              <img src={savedPhoto} alt="note photo" className="w-full max-h-52 object-cover" />
+              <button
+                onClick={() => setSavedPhoto(null)}
+                className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/60 text-white flex items-center justify-center text-xs font-bold hover:bg-black/80 transition"
+                aria-label="Remove photo"
+              >
+                ✕
+              </button>
+              <button
+                onClick={() => { setRawPhoto(savedPhoto); setSavedPhoto(null); }}
+                className="absolute top-2 left-2 px-2 py-1 rounded-lg bg-black/60 text-white text-xs font-medium hover:bg-black/80 transition"
+                aria-label="Change filter"
+              >
+                Filtre
+              </button>
+            </div>
+          )}
 
           <textarea
             ref={textareaRef}
             value={text}
             onChange={(e) => setText(e.target.value)}
             placeholder={listening ? "Parle, j'écoute…" : "Écris quelque chose…"}
-            rows={4}
+            rows={savedPhoto ? 2 : 4}
             className={`input-base resize-none mb-4 text-base leading-relaxed transition-all duration-300
               ${listening ? "border-rose-300 dark:border-rose-700 ring-2 ring-rose-200 dark:ring-rose-900/50" : ""}`}
             onKeyDown={(e) => {
@@ -616,7 +817,7 @@ function AddSheet({ open, onClose, onAdd }: AddSheetProps) {
             </button>
             <button
               onClick={handleAdd}
-              disabled={!text.trim()}
+              disabled={!text.trim() && !savedPhoto}
               className="btn-primary flex-1 py-3"
             >
               Add Note
@@ -667,7 +868,7 @@ export default function Home() {
     try { localStorage.setItem("mn-theme", next ? "dark" : "light"); } catch { /* ignore */ }
   }
 
-  function addNote(text: string, color: NoteColor) {
+  function addNote(text: string, color: NoteColor, image?: string) {
     const note: Note = {
       id: uid(),
       text,
@@ -675,6 +876,7 @@ export default function Home() {
       color,
       createdAt: Date.now(),
       pinned: false,
+      image,
     };
     setNotes((prev) => [note, ...prev]);
     setNewNoteId(note.id);
