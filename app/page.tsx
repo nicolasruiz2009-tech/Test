@@ -13,7 +13,8 @@ interface Note {
   color: NoteColor;
   createdAt: number;
   pinned: boolean;
-  image?: string; // base64 JPEG data URL
+  image?: string;       // original photo data URL
+  imageFilter?: string; // CSS filter string
 }
 
 // ── Photo filters ────────────────────────────────────────────────────────────
@@ -389,7 +390,12 @@ function NoteCard({ note, onToggle, onDelete, onPin, isNew }: NoteCardProps) {
         {/* Photo */}
         {note.image && (
           <div className="mt-3 rounded-xl overflow-hidden">
-            <img src={note.image} alt="note photo" className="w-full max-h-52 object-cover" />
+            <img
+              src={note.image}
+              alt="note photo"
+              className="w-full max-h-52 object-cover"
+              style={{ filter: note.imageFilter }}
+            />
           </div>
         )}
 
@@ -429,7 +435,7 @@ function NoteCard({ note, onToggle, onDelete, onPin, isNew }: NoteCardProps) {
 
 interface PhotoEditorProps {
   src: string;
-  onConfirm: (dataUrl: string) => void;
+  onConfirm: (url: string, filterCss?: string) => void;
   onCancel: () => void;
 }
 
@@ -443,7 +449,7 @@ function PhotoEditor({ src, onConfirm, onCancel }: PhotoEditorProps) {
     const img = imgRef.current;
     if (!img) return;
 
-    // Resize to max 900px while keeping aspect ratio
+    // Resize to max 900px and compress, no canvas filter (unreliable on iOS Safari)
     const MAX = 900;
     const scale = Math.min(MAX / img.naturalWidth, MAX / img.naturalHeight, 1);
     const w = Math.round(img.naturalWidth  * scale);
@@ -453,10 +459,10 @@ function PhotoEditor({ src, onConfirm, onCancel }: PhotoEditorProps) {
     canvas.width  = w;
     canvas.height = h;
     const ctx = canvas.getContext("2d")!;
-    if (filterCss !== "none") ctx.filter = filterCss;
     ctx.drawImage(img, 0, 0, w, h);
 
-    onConfirm(canvas.toDataURL("image/jpeg", 0.75));
+    // Pass filter CSS separately — applied via CSS at display time (works on all Safari versions)
+    onConfirm(canvas.toDataURL("image/jpeg", 0.75), filterCss === "none" ? undefined : filterCss);
   }
 
   return (
@@ -529,7 +535,7 @@ function PhotoEditor({ src, onConfirm, onCancel }: PhotoEditorProps) {
 interface AddSheetProps {
   open: boolean;
   onClose: () => void;
-  onAdd: (text: string, color: NoteColor, image?: string) => void;
+  onAdd: (text: string, color: NoteColor, image?: string, imageFilter?: string) => void;
 }
 
 function AddSheet({ open, onClose, onAdd }: AddSheetProps) {
@@ -537,8 +543,8 @@ function AddSheet({ open, onClose, onAdd }: AddSheetProps) {
   const [color, setColor]             = useState<NoteColor>("default");
   const [listening, setListening]     = useState(false);
   const [voiceOk, setVoiceOk]         = useState(false);
-  const [rawPhoto, setRawPhoto]       = useState<string | null>(null);   // before filter
-  const [savedPhoto, setSavedPhoto]   = useState<string | null>(null);   // after filter
+  const [rawPhoto, setRawPhoto]     = useState<string | null>(null);
+  const [savedPhoto, setSavedPhoto] = useState<{ url: string; filter?: string } | null>(null);
   const textareaRef                   = useRef<HTMLTextAreaElement>(null);
   const fileInputRef                  = useRef<HTMLInputElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -662,7 +668,7 @@ function AddSheet({ open, onClose, onAdd }: AddSheetProps) {
   function handleAdd() {
     const trimmed = text.trim();
     if (!trimmed && !savedPhoto) return;
-    onAdd(trimmed, color, savedPhoto ?? undefined);
+    onAdd(trimmed, color, savedPhoto?.url, savedPhoto?.filter);
     onClose();
   }
 
@@ -682,7 +688,7 @@ function AddSheet({ open, onClose, onAdd }: AddSheetProps) {
       {rawPhoto && (
         <PhotoEditor
           src={rawPhoto}
-          onConfirm={(dataUrl) => { setSavedPhoto(dataUrl); setRawPhoto(null); }}
+          onConfirm={(url, filterCss) => { setSavedPhoto({ url, filter: filterCss }); setRawPhoto(null); }}
           onCancel={() => setRawPhoto(null)}
         />
       )}
@@ -724,8 +730,7 @@ function AddSheet({ open, onClose, onAdd }: AddSheetProps) {
                 className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium transition-all duration-200
                   ${savedPhoto
                     ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/40"
-                    : "bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700"
-                  }`}
+                    : "bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700"}`}
               >
                 <CameraIcon />
                 <span>{savedPhoto ? "Photo ✓" : "Photo"}</span>
@@ -755,7 +760,12 @@ function AddSheet({ open, onClose, onAdd }: AddSheetProps) {
           {/* Photo preview (thumbnail) */}
           {savedPhoto && (
             <div className="relative mb-4 rounded-2xl overflow-hidden animate-fade-in">
-              <img src={savedPhoto} alt="note photo" className="w-full max-h-52 object-cover" />
+              <img
+                src={savedPhoto.url}
+                alt="note photo"
+                className="w-full max-h-52 object-cover"
+                style={{ filter: savedPhoto.filter }}
+              />
               <button
                 onClick={() => setSavedPhoto(null)}
                 className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/60 text-white flex items-center justify-center text-xs font-bold hover:bg-black/80 transition"
@@ -764,7 +774,7 @@ function AddSheet({ open, onClose, onAdd }: AddSheetProps) {
                 ✕
               </button>
               <button
-                onClick={() => { setRawPhoto(savedPhoto); setSavedPhoto(null); }}
+                onClick={() => { setRawPhoto(savedPhoto.url); setSavedPhoto(null); }}
                 className="absolute top-2 left-2 px-2 py-1 rounded-lg bg-black/60 text-white text-xs font-medium hover:bg-black/80 transition"
                 aria-label="Change filter"
               >
@@ -817,7 +827,7 @@ function AddSheet({ open, onClose, onAdd }: AddSheetProps) {
             </button>
             <button
               onClick={handleAdd}
-              disabled={!text.trim() && !savedPhoto}
+              disabled={!text.trim() && !savedPhoto?.url}
               className="btn-primary flex-1 py-3"
             >
               Add Note
@@ -868,7 +878,7 @@ export default function Home() {
     try { localStorage.setItem("mn-theme", next ? "dark" : "light"); } catch { /* ignore */ }
   }
 
-  function addNote(text: string, color: NoteColor, image?: string) {
+  function addNote(text: string, color: NoteColor, image?: string, imageFilter?: string) {
     const note: Note = {
       id: uid(),
       text,
@@ -877,6 +887,7 @@ export default function Home() {
       createdAt: Date.now(),
       pinned: false,
       image,
+      imageFilter,
     };
     setNotes((prev) => [note, ...prev]);
     setNewNoteId(note.id);
