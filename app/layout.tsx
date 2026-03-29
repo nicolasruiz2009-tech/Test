@@ -10,6 +10,9 @@ export const metadata: Metadata = {
     statusBarStyle: "black-translucent",
     title: "MobileNotes",
   },
+  icons: {
+    apple: "/icon-192.svg",
+  },
   openGraph: {
     title: "MobileNotes",
     description: "A beautiful mobile-first notes and todo app",
@@ -48,6 +51,11 @@ export default function RootLayout({
                   }
                 } catch(e){}
               })();
+              if ('serviceWorker' in navigator) {
+                window.addEventListener('load', function() {
+                  navigator.serviceWorker.register('/sw.js');
+                });
+              }
             `,
           }}
         />
