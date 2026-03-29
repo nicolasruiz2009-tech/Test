@@ -13,8 +13,10 @@ interface Note {
   color: NoteColor;
   createdAt: number;
   pinned: boolean;
-  image?: string;       // original photo data URL
-  imageFilter?: string; // CSS filter string
+  image?: string;
+  imageFilter?: string;
+  audio?: string;        // base64 audio data URL
+  audioDuration?: number; // seconds
 }
 
 // ── Photo filters ────────────────────────────────────────────────────────────
@@ -165,6 +167,31 @@ function PinIcon({ filled }: { filled: boolean }) {
   return (
     <svg className="w-4 h-4" viewBox="0 0 24 24" fill={filled ? "currentColor" : "none"} stroke="currentColor" strokeWidth={2}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M15 4.5l-8 8 2 2 8-8M9 15l-5 5M12 3l9 9-4 1-6-6 1-4z" />
+    </svg>
+  );
+}
+
+function PlayIcon() {
+  return (
+    <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+      <polygon points="5,3 19,12 5,21" />
+    </svg>
+  );
+}
+
+function PauseIcon() {
+  return (
+    <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+      <rect x="6" y="4" width="4" height="16" rx="1" />
+      <rect x="14" y="4" width="4" height="16" rx="1" />
+    </svg>
+  );
+}
+
+function StopRecIcon() {
+  return (
+    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+      <rect x="4" y="4" width="16" height="16" rx="3" />
     </svg>
   );
 }
@@ -388,6 +415,11 @@ function NoteCard({ note, onToggle, onDelete, onPin, isNew }: NoteCardProps) {
           </div>
         </div>
 
+        {/* Audio player */}
+        {note.audio && (
+          <AudioPlayer url={note.audio} duration={note.audioDuration ?? 0} />
+        )}
+
         {/* Photo — tap to open lightbox */}
         {note.image && (
           <div
@@ -440,6 +472,95 @@ function NoteCard({ note, onToggle, onDelete, onPin, isNew }: NoteCardProps) {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// ── Audio Player ─────────────────────────────────────────────────────────────
+
+// Fake-but-realistic waveform heights so every note looks unique
+const WAVE = [4,7,12,8,14,10,6,15,9,13,5,11,8,14,7,10,13,6,9,12,7,11,5,8,13];
+
+function fmtTime(s: number) {
+  const m = Math.floor(s / 60);
+  const sec = Math.floor(s % 60);
+  return `${m}:${String(sec).padStart(2, "0")}`;
+}
+
+function AudioPlayer({ url, duration }: { url: string; duration: number }) {
+  const [playing, setPlaying]     = useState(false);
+  const [current, setCurrent]     = useState(0);
+  const [realDur, setRealDur]     = useState(duration);
+  const audioRef                  = useRef<HTMLAudioElement>(null);
+
+  const progress = realDur > 0 ? current / realDur : 0;
+
+  function toggle() {
+    const a = audioRef.current;
+    if (!a) return;
+    playing ? a.pause() : a.play();
+  }
+
+  function handleSeek(e: React.MouseEvent<HTMLDivElement>) {
+    const a = audioRef.current;
+    if (!a || !realDur) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const ratio = (e.clientX - rect.left) / rect.width;
+    a.currentTime = ratio * realDur;
+  }
+
+  return (
+    <div
+      className="flex items-center gap-3 mt-3 bg-slate-100 dark:bg-slate-700/60 rounded-2xl px-3 py-2.5"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <audio
+        ref={audioRef}
+        src={url}
+        onPlay={() => setPlaying(true)}
+        onPause={() => setPlaying(false)}
+        onEnded={() => { setPlaying(false); setCurrent(0); }}
+        onTimeUpdate={() => setCurrent(audioRef.current?.currentTime ?? 0)}
+        onLoadedMetadata={() => setRealDur(audioRef.current?.duration ?? duration)}
+      />
+
+      {/* Play / Pause */}
+      <button
+        onClick={toggle}
+        className="w-9 h-9 rounded-full bg-indigo-500 text-white flex items-center justify-center flex-shrink-0 shadow active:scale-90 transition"
+      >
+        {playing ? <PauseIcon /> : <PlayIcon />}
+      </button>
+
+      {/* Waveform + seek */}
+      <div
+        className="flex-1 flex items-center gap-px cursor-pointer h-8"
+        onClick={handleSeek}
+        role="slider"
+        aria-label="Seek"
+      >
+        {WAVE.map((h, i) => {
+          const isPlayed = i / WAVE.length < progress;
+          return (
+            <div
+              key={i}
+              className={`flex-1 rounded-full transition-colors duration-150 ${
+                isPlayed ? "bg-indigo-500" : "bg-slate-300 dark:bg-slate-500"
+              }`}
+              style={{
+                height: `${h}px`,
+                animation: playing ? `barPulse ${0.4 + (i % 4) * 0.12}s ease-in-out ${(i % 5) * 0.06}s infinite alternate` : undefined,
+                transformOrigin: "center",
+              }}
+            />
+          );
+        })}
+      </div>
+
+      {/* Time */}
+      <span className="text-xs font-medium tabular-nums text-slate-500 dark:text-slate-400 flex-shrink-0 w-8 text-right">
+        {playing ? fmtTime(current) : fmtTime(realDur)}
+      </span>
     </div>
   );
 }
@@ -577,7 +698,7 @@ function PhotoEditor({ src, onConfirm, onCancel }: PhotoEditorProps) {
 interface AddSheetProps {
   open: boolean;
   onClose: () => void;
-  onAdd: (text: string, color: NoteColor, image?: string, imageFilter?: string) => void;
+  onAdd: (text: string, color: NoteColor, image?: string, imageFilter?: string, audio?: string, audioDuration?: number) => void;
 }
 
 function AddSheet({ open, onClose, onAdd }: AddSheetProps) {
@@ -585,10 +706,16 @@ function AddSheet({ open, onClose, onAdd }: AddSheetProps) {
   const [color, setColor]             = useState<NoteColor>("default");
   const [listening, setListening]     = useState(false);
   const [voiceOk, setVoiceOk]         = useState(false);
-  const [rawPhoto, setRawPhoto]     = useState<string | null>(null);
-  const [savedPhoto, setSavedPhoto] = useState<{ url: string; filter?: string } | null>(null);
+  const [rawPhoto, setRawPhoto]       = useState<string | null>(null);
+  const [savedPhoto, setSavedPhoto]   = useState<{ url: string; filter?: string } | null>(null);
+  const [recording, setRecording]     = useState(false);
+  const [recSecs, setRecSecs]         = useState(0);
+  const [savedAudio, setSavedAudio]   = useState<{ url: string; duration: number } | null>(null);
   const textareaRef                   = useRef<HTMLTextAreaElement>(null);
   const fileInputRef                  = useRef<HTMLInputElement>(null);
+  const mediaRecRef                   = useRef<MediaRecorder | null>(null);
+  const audioChunksRef                = useRef<Blob[]>([]);
+  const recTimerRef                   = useRef<ReturnType<typeof setInterval> | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recognitionRef  = useRef<any>(null);
   const committedRef    = useRef("");
@@ -612,6 +739,9 @@ function AddSheet({ open, onClose, onAdd }: AddSheetProps) {
       setColor("default");
       setRawPhoto(null);
       setSavedPhoto(null);
+      stopRecording();
+      setSavedAudio(null);
+      setRecSecs(0);
       stopListening();
       committedRef.current  = "";
       lastChunkRef.current  = "";
@@ -697,6 +827,46 @@ function AddSheet({ open, onClose, onAdd }: AddSheetProps) {
     }
   }
 
+  async function startRecording() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = ["audio/mp4", "audio/webm;codecs=opus", "audio/webm", "audio/ogg"]
+        .find((t) => MediaRecorder.isTypeSupported(t)) ?? "";
+      const rec = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      audioChunksRef.current = [];
+      rec.ondataavailable = (e) => { if (e.data.size > 0) audioChunksRef.current.push(e.data); };
+      rec.onstop = () => {
+        const blob = new Blob(audioChunksRef.current, { type: mimeType || "audio/mp4" });
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          setSavedAudio({ url: ev.target?.result as string, duration: recSecs });
+        };
+        reader.readAsDataURL(blob);
+        stream.getTracks().forEach((t) => t.stop());
+      };
+      mediaRecRef.current = rec;
+      rec.start(100);
+      setRecording(true);
+      setRecSecs(0);
+      // auto-stop at 120s
+      recTimerRef.current = setInterval(() => {
+        setRecSecs((s) => {
+          if (s + 1 >= 120) { stopRecording(); return s; }
+          return s + 1;
+        });
+      }, 1000);
+    } catch {
+      // mic permission denied — silently ignore
+    }
+  }
+
+  function stopRecording() {
+    mediaRecRef.current?.stop();
+    mediaRecRef.current = null;
+    if (recTimerRef.current) { clearInterval(recTimerRef.current); recTimerRef.current = null; }
+    setRecording(false);
+  }
+
   function handlePhotoSelected(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -709,8 +879,8 @@ function AddSheet({ open, onClose, onAdd }: AddSheetProps) {
 
   function handleAdd() {
     const trimmed = text.trim();
-    if (!trimmed && !savedPhoto) return;
-    onAdd(trimmed, color, savedPhoto?.url, savedPhoto?.filter);
+    if (!trimmed && !savedPhoto && !savedAudio) return;
+    onAdd(trimmed, color, savedPhoto?.url, savedPhoto?.filter, savedAudio?.url, savedAudio?.duration);
     onClose();
   }
 
@@ -778,6 +948,24 @@ function AddSheet({ open, onClose, onAdd }: AddSheetProps) {
                 <span>{savedPhoto ? "Photo ✓" : "Photo"}</span>
               </button>
 
+              {/* Audio record button */}
+              <button
+                onClick={recording ? stopRecording : startRecording}
+                aria-label={recording ? "Stop recording" : "Record voice note"}
+                className={`relative flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium transition-all duration-200
+                  ${recording
+                    ? "bg-rose-500 text-white shadow-lg shadow-rose-500/40"
+                    : savedAudio
+                    ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/40"
+                    : "bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700"}`}
+              >
+                {recording && <span className="absolute inset-0 rounded-xl bg-rose-500 animate-ping opacity-25" />}
+                <span className="relative flex items-center gap-1.5">
+                  {recording ? <StopRecIcon /> : <MicIcon active={false} />}
+                  <span>{recording ? fmtTime(recSecs) : savedAudio ? "Audio ✓" : "Audio"}</span>
+                </span>
+              </button>
+
               {/* Mic button */}
               {voiceOk && (
                 <button
@@ -825,12 +1013,25 @@ function AddSheet({ open, onClose, onAdd }: AddSheetProps) {
             </div>
           )}
 
+          {/* Audio preview */}
+          {savedAudio && !recording && (
+            <div className="mb-4 animate-fade-in">
+              <AudioPlayer url={savedAudio.url} duration={savedAudio.duration} />
+              <button
+                onClick={() => setSavedAudio(null)}
+                className="mt-1.5 text-xs text-rose-400 hover:text-rose-600 transition"
+              >
+                Supprimer l'audio
+              </button>
+            </div>
+          )}
+
           <textarea
             ref={textareaRef}
             value={text}
             onChange={(e) => setText(e.target.value)}
             placeholder={listening ? "Parle, j'écoute…" : "Écris quelque chose…"}
-            rows={savedPhoto ? 2 : 4}
+            rows={savedPhoto || savedAudio ? 2 : 4}
             className={`input-base resize-none mb-4 text-base leading-relaxed transition-all duration-300
               ${listening ? "border-rose-300 dark:border-rose-700 ring-2 ring-rose-200 dark:ring-rose-900/50" : ""}`}
             onKeyDown={(e) => {
@@ -869,7 +1070,7 @@ function AddSheet({ open, onClose, onAdd }: AddSheetProps) {
             </button>
             <button
               onClick={handleAdd}
-              disabled={!text.trim() && !savedPhoto?.url}
+              disabled={!text.trim() && !savedPhoto?.url && !savedAudio}
               className="btn-primary flex-1 py-3"
             >
               Add Note
@@ -920,7 +1121,7 @@ export default function Home() {
     try { localStorage.setItem("mn-theme", next ? "dark" : "light"); } catch { /* ignore */ }
   }
 
-  function addNote(text: string, color: NoteColor, image?: string, imageFilter?: string) {
+  function addNote(text: string, color: NoteColor, image?: string, imageFilter?: string, audio?: string, audioDuration?: number) {
     const note: Note = {
       id: uid(),
       text,
@@ -930,6 +1131,8 @@ export default function Home() {
       pinned: false,
       image,
       imageFilter,
+      audio,
+      audioDuration,
     };
     setNotes((prev) => [note, ...prev]);
     setNewNoteId(note.id);
